@@ -58,13 +58,34 @@ install_cask() {
     fi
 }
 
+run_pip_command() {
+    local -a args=("$@")
+    local pip_output
+
+    if pip_output=$(python3 -m pip "${args[@]}" 2>&1); then
+        printf '%s\n' "$pip_output"
+        return 0
+    fi
+
+    local status=$?
+    printf '%s\n' "$pip_output" >&2
+
+    if [[ "$pip_output" == *"externally managed"* ]]; then
+        echo "Detected externally managed Python environment; retrying with --break-system-packages." >&2
+        python3 -m pip "${args[@]}" --break-system-packages
+        return $?
+    fi
+
+    return $status
+}
+
 pip_install() {
     local package="$1"
     if python3 -m pip show "$package" &>/dev/null; then
         echo "✔ Python package '${package}' already installed"
     else
         echo "➜ Installing Python package '${package}'..."
-        python3 -m pip install --user "$package"
+        run_pip_command install --user "$package"
     fi
 }
 
@@ -270,7 +291,10 @@ add_brew_to_path
 
 PYTHON_BIN="$(command -v python3 || true)"
 if [[ -n "$PYTHON_BIN" ]]; then
-    python3 -m pip install --upgrade pip
+    echo "➜ Upgrading pip in user site-packages (when possible)..."
+    if ! run_pip_command install --upgrade --user pip; then
+        echo "Skipping pip upgrade because the environment is managed externally." >&2
+    fi
 fi
 
 PYTHON_PACKAGES=(
