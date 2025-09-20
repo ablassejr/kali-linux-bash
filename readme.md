@@ -21,3 +21,19 @@ After installation, start a new terminal or run `exec zsh` to load the updated c
 - `dfor767_schedule`
 
 These functions summarize the syllabus, recommended tools, and external resources.
+
+## macOS Language Tooling Setup
+
+For macOS development hosts, the repository provides `scripts/install_macos_language_support.sh` to bootstrap
+language runtimes, compilers, formatters, and language servers required by the LazyVim configuration referenced
+in the accompanying `lazy-lock.json`. The script expects that [Xcode Command Line Tools](https://developer.apple.com/xcode/resources/)
+and [Homebrew](https://brew.sh/) are already installed.
+
+Run the setup script as the login user (no `sudo` needed):
+
+```bash
+./scripts/install_macos_language_support.sh
+```
+
+The installer provisions dependencies for C/C++, Rust, Go, Python, Node.js/TypeScript, Ruby, R, Java/.NET, Elixir, Scala/Metals,
+Lean, Zig, TeX, database clients, and associated command-line tooling so that LazyVim plugins and language servers work out of the box.
