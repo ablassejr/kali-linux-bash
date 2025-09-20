@@ -105,7 +105,16 @@ gem_install() {
         echo "✔ Ruby gem '${package}' already installed"
     else
         echo "➜ Installing Ruby gem '${package}'..."
-        gem install "$package"
+        if gem install "$package"; then
+            return
+        fi
+
+        echo "First attempt to install '${package}' failed; retrying with --user-install." >&2
+        if gem install --user-install "$package"; then
+            return
+        fi
+
+        return $?
     fi
 }
 
@@ -207,6 +216,14 @@ configure_shell_paths() {
     target_user=$(get_target_user)
     local home_dir
     home_dir=$(get_home_dir "$target_user")
+    local ruby_version=""
+    local gem_user_bin=""
+    if command -v ruby &>/dev/null; then
+        ruby_version=$(ruby -rrbconfig -e 'print RbConfig::CONFIG["ruby_version"]' 2>/dev/null || true)
+        if [[ -n "$ruby_version" ]]; then
+            gem_user_bin="$home_dir/.gem/ruby/$ruby_version/bin"
+        fi
+    fi
     local -a shell_files=("$home_dir/.zshrc" "$home_dir/.bash_profile")
     local -a path_entries=(
         'export PATH="$HOME/.cargo/bin:$PATH"'
@@ -220,11 +237,47 @@ configure_shell_paths() {
         'export PATH="$HOME/Library/Application Support/Coursier/bin:$PATH"'
     )
 
+    if [[ -n "$gem_user_bin" ]]; then
+        local gem_path_entry
+        printf -v gem_path_entry 'export PATH="%s:$%s"' "$gem_user_bin" "PATH"
+        path_entries+=("$gem_path_entry")
+    fi
+
     for shell_file in "${shell_files[@]}"; do
         for entry in "${path_entries[@]}"; do
             append_if_missing "$shell_file" "$entry" "$entry"
         done
     done
+}
+
+prepare_gem_environment() {
+    if ! command -v ruby &>/dev/null; then
+        return
+    fi
+
+    if [[ -n "${GEM_HOME:-}" && -n "${GEM_PATH:-}" ]]; then
+        return
+    fi
+
+    local ruby_version
+    ruby_version=$(ruby -rrbconfig -e 'print RbConfig::CONFIG["ruby_version"]' 2>/dev/null || true)
+    if [[ -z "$ruby_version" ]]; then
+        return
+    fi
+
+    local user_gem_dir="$HOME/.gem/ruby/$ruby_version"
+    local default_gem_dir
+    default_gem_dir=$(ruby -rrubygems -e 'print Gem.default_dir' 2>/dev/null || true)
+    mkdir -p "$user_gem_dir"
+    export GEM_HOME="${GEM_HOME:-$user_gem_dir}"
+    if [[ -n "${GEM_PATH:-}" ]]; then
+        :
+    elif [[ -n "$default_gem_dir" ]]; then
+        export GEM_PATH="$user_gem_dir:$default_gem_dir"
+    else
+        export GEM_PATH="$user_gem_dir"
+    fi
+    export PATH="$user_gem_dir/bin:$PATH"
 }
 
 ensure_homebrew
@@ -338,8 +391,12 @@ for package in "${NPM_PACKAGES[@]}"; do
     npm_install "$package"
 done
 
+prepare_gem_environment
+
 if command -v gem &>/dev/null; then
-    gem update --system
+    if ! gem update --system; then
+        echo "Skipping 'gem update --system' due to insufficient permissions. Consider running it manually with elevated privileges." >&2
+    fi
 fi
 
 RUBY_GEMS=(
